@@ -264,7 +264,7 @@ function payex_init_gateway_class() {
                     			"country" => $order_data['billing']['country'],
                     			"return_url" => $return_url,
                     			"callback_url" => $callback_url,
-					"items" => wp_json_encode($items),
+					"items" => $items,
                     			"source" => "wordpress"
                 		) ) );
     
