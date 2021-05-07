@@ -8,7 +8,7 @@
  * Plugin Name:       Payex Payment Gateway for Woocommerce
  * Plugin URI:        https://payex.io
  * Description:       Accept FPX and Card payments using Payex
- * Version:           1.1.0
+ * Version:           1.1.1
  * Requires at least: 4.7
  * Requires PHP:      7.0
  * Author:            Nedex Solutions
@@ -166,21 +166,23 @@ function payex_init_gateway_class() {
 			// we need it to get any order details.
 			$order      = wc_get_order( $order_id );
 			$order_data = $order->get_data();
+			$order_items = $order->get_items();
 			$url        = self::API_URL;
 
 			if ( $this->get_option( 'testmode' ) === 'yes' ) {
 				$url = self::API_URL_SANDBOX;
 			}
 
-					$token = $this->get_payex_token( $url );
+			$token = $this->get_payex_token( $url );
 
 			if ( $token ) {
 				// generate payex payment link.
 				$payment_link = $this->get_payex_payment_link(
 					$url,
-                    			$order_data,
+					$order_data,
+					$order_items,
 					$this->get_return_url( $order ),
-                    			WC()->api_request_url( get_class( $this ) ),
+					WC()->api_request_url( get_class( $this ) ),
 					$token
 				);
 
@@ -226,14 +228,23 @@ function payex_init_gateway_class() {
 		 *
 		 * @param  string      $url             Payex API URL.
 		 * @param  string      $order_data      Customer order data.
+		 * @param  string      $order_items     Customer order items.
 		 * @param  string      $return_url      Return URL when customer completed payment.
 		 * @param  string      $callback_url    Callback URL when customer completed payment.
 		 * @param  string|null $token           Payex token.
 		 * @return string
 		 */
-		private function get_payex_payment_link( $url, $order_data, $return_url, $callback_url, $token = null ) {
+		private function get_payex_payment_link( $url, $order_data, $order_items, $return_url, $callback_url, $token = null ) {
 			if ( ! $token ) {
 				$token = $this->getToken()['token'];
+			}
+
+			$items = array();
+
+			foreach( $order_items as $item_id => $item ){
+				// order item data as an array
+				$item_data = $item->get_data();
+				array_push($items, $item_data);
 			}
 
 			if ( $token ) {
@@ -253,6 +264,7 @@ function payex_init_gateway_class() {
                     			"country" => $order_data['billing']['country'],
                     			"return_url" => $return_url,
                     			"callback_url" => $callback_url,
+					"items" => wp_json_encode($items),
                     			"source" => "wordpress"
                 		) ) );
     
