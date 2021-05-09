@@ -249,7 +249,7 @@ function payex_init_gateway_class() {
 
 			if ( $token ) {
                 		$body = wp_json_encode( array( array(
-                    			"amount" => $order_data['total'] * 100,
+                    			"amount" => round($order_data['total'] * 100, 0),
                     			"currency" => $order_data['currency'],
                     			"customer_id" => $order_data['customer_id'],
                     			"description" => 'Payment for Order Reference:' . $order_data['order_key'],
