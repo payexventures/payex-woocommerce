@@ -62,8 +62,8 @@ function payex_init_gateway_class() {
 			$this->id                 = 'payex'; // payment gateway plugin ID.
 			$this->icon               = 'https://payexpublic.blob.core.windows.net/storage/payex_woocommerce.jpg'; // URL of the icon that will be displayed on checkout page near your gateway name.
 			$this->has_fields         = true; // in case you need a custom credit card form.
-			$this->method_title       = 'Payex Gateway';
-			$this->method_description = 'Accept FPX and Card payments using Payex Payment Gateway (payex.io)'; // will be displayed on the options page.
+			$this->method_title       = 'Payex Payment Gateway';
+			$this->method_description = 'Accept Online Banking, Cards, EWallets and Instalments using Payex Payment Gateway (https://www.payex.io/)'; // will be displayed on the options page.
 			$this->order_button_text  = 'Pay via Payex';
 
 			$this->supports = array(
@@ -108,7 +108,7 @@ function payex_init_gateway_class() {
 					'title'       => 'Description',
 					'type'        => 'textarea',
 					'description' => 'This controls the description which the user sees during checkout',
-					'default'     => 'Pay via Payex using FPX, Visa or Mastercard',
+					'default'     => 'Pay via Payex using Online Banking, Cards, EWallets and Instalments',
 				),
 				'testmode'    => array(
 					'title'       => 'Sandbox environment',
