@@ -214,12 +214,7 @@ function payex_init_gateway_class() {
 					if ( ! $order->is_paid() ) { // only mark order as completed if the order was not paid before.
 						$order->payment_complete();
 						$order->reduce_order_stock();
-						$order->add_order_note( 'Payment completed with Payex', true );
-					} else {
-						$order->add_order_note( 'Payment already made for this order with Auth Code:' . $auth_code, true );
-					}
-				} else {
-					$order->add_order_note( 'Payex Payment failed with Auth Code:' . $auth_code, true );
+					} 
 				}
 			}
 		}
