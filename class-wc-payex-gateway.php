@@ -8,7 +8,7 @@
  * Plugin Name:       Payex Payment Gateway for Woocommerce
  * Plugin URI:        https://payex.io
  * Description:       Accept Online Banking, Cards, EWallets and Instalments payments using Payex
- * Version:           1.1.7
+ * Version:           1.1.8
  * Requires at least: 4.7
  * Requires PHP:      7.0
  * Author:            Nedex Solutions
@@ -243,6 +243,21 @@ function payex_init_gateway_class() {
 				$item_data = $item->get_data();
 				array_push($items, $item_data);
 			}
+			
+			if (strlen($order_data['shipping']['address_1']) != 0){
+				$address = $order_data['shipping']['company'] . ' ' . $order_data['shipping']['address_1'] . ',' . $order_data['shipping']['address_2'];
+				$postcode = $order_data['shipping']['postcode'];
+				$city = $order_data['shipping']['city'];
+				$state = $order_data['shipping']['state'];
+				$country = $order_data['shipping']['country'];
+			}
+			else {
+				$address = $order_data['billing']['company'] . ' ' . $order_data['billing']['address_1'] . ',' . $order_data['billing']['address_2'];
+				$postcode = $order_data['billing']['postcode'];
+				$city = $order_data['billing']['city'];
+				$state = $order_data['billing']['state'];
+				$country = $order_data['billing']['country'];
+			}	
 
 			if ( $token ) {
                 		$body = wp_json_encode( array( array(
@@ -254,11 +269,11 @@ function payex_init_gateway_class() {
                     			"customer_name" => $order_data['billing']['first_name'] . ' ' . $order_data['billing']['last_name'],
                     			"contact_number" => $order_data['billing']['phone'],
                     			"email" => $order_data['billing']['email'],
-                    			"address" => $order_data['shipping']['company'] . ' ' . $order_data['shipping']['address_1'] . ',' . $order_data['shipping']['address_2'],
-                    			"postcode" => $order_data['shipping']['postcode'],
-                    			"city" => $order_data['shipping']['city'],
-                    			"state" => $order_data['shipping']['state'],
-                    			"country" => $order_data['shipping']['country'],
+                    			"address" => $address,
+                    			"postcode" => $postcode,
+                    			"city" => $city,
+                    			"state" => $state,
+                    			"country" => $country,
                     			"return_url" => $accept_url,
 					"accept_url" => $accept_url,
 					"reject_url" => $reject_url,
