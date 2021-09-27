@@ -245,57 +245,57 @@ function payex_init_gateway_class() {
 			}
 
 			if ( $token ) {
-                		$body = wp_json_encode( array( array(
-                    			"amount" => round($order_data['total'] * 100, 0),
-                    			"currency" => $order_data['currency'],
-                    			"customer_id" => $order_data['customer_id'],
-                    			"description" => 'Payment for Order Reference:' . $order_data['order_key'],
-                    			"reference_number" => $order_data['id'],
-                    			"customer_name" => $order_data['billing']['first_name'] . ' ' . $order_data['billing']['last_name'],
-                    			"contact_number" => $order_data['billing']['phone'],
-                    			"email" => $order_data['billing']['email'],
-                    			"address" => $order_data['billing']['company'] . ' ' . $order_data['billing']['address_1'] . ',' . $order_data['billing']['address_2'],
-                    			"postcode" => $order_data['billing']['postcode'],
-                    			"city" => $order_data['billing']['city'],
-                    			"state" => $order_data['billing']['state'],
-                    			"country" => $order_data['billing']['country'],
-					"shipping_name" => $order_data['shipping']['first_name'] . ' ' . $order_data['shipping']['last_name'],
-                    			"shipping_address" => $order_data['shipping']['company'] . ' ' . $order_data['shipping']['address_1'] . ',' . $order_data['shipping']['address_2'],
-                    			"shipping_postcode" => $order_data['shipping']['postcode'],
-                    			"shipping_city" => $order_data['shipping']['city'],
-                    			"shipping_state" => $order_data['shipping']['state'],
-                    			"shipping_country" => $order_data['shipping']['country'],
-                    			"return_url" => $accept_url,
-					"accept_url" => $accept_url,
-					"reject_url" => $reject_url,
-                    			"callback_url" => $callback_url,
-					"items" => $items,
-                    			"source" => "wordpress"
-                		) ) );
+                $body = wp_json_encode( array( array(
+                    "amount" => round($order_data['total'] * 100, 0),
+                    "currency" => $order_data['currency'],
+                    "customer_id" => $order_data['customer_id'],
+                    "description" => 'Payment for Order Reference:' . $order_data['order_key'],
+                    "reference_number" => $order_data['id'],
+                    "customer_name" => $order_data['billing']['first_name'] . ' ' . $order_data['billing']['last_name'],
+                    "contact_number" => $order_data['billing']['phone'],
+                    "email" => $order_data['billing']['email'],
+                    "address" => $order_data['billing']['company'] . ' ' . $order_data['billing']['address_1'] . ',' . $order_data['billing']['address_2'],
+                    "postcode" => $order_data['billing']['postcode'],
+                    "city" => $order_data['billing']['city'],
+                    "state" => $order_data['billing']['state'],
+                    "country" => $order_data['billing']['country'],
+                    "shipping_name" => $order_data['shipping']['first_name'] . ' ' . $order_data['shipping']['last_name'],
+                    "shipping_address" => $order_data['shipping']['company'] . ' ' . $order_data['shipping']['address_1'] . ',' . $order_data['shipping']['address_2'],
+                    "shipping_postcode" => $order_data['shipping']['postcode'],
+                    "shipping_city" => $order_data['shipping']['city'],
+                    "shipping_state" => $order_data['shipping']['state'],
+                    "shipping_country" => $order_data['shipping']['country'],
+                    "return_url" => $accept_url,
+                    "accept_url" => $accept_url,
+                    "reject_url" => $reject_url,
+                    "callback_url" => $callback_url,
+                    "items" => $items,
+                    "source" => "wordpress"
+                ) ) );
     
-                		$request = wp_remote_post(
-                    			$url . self::API_PAYMENT_FORM,
-                    			array(
-                        			'method'  => 'POST',
-                        			'timeout' => 45,
-                        			'headers' => array(
-                            				'Content-Type'  => 'application/json',
-                            				'Authorization' => 'Bearer ' . $token,
-                        			),
-                        			'cookies' => array(),
-                        			'body'    => $body
-                    			)
-                		);
+                $request = wp_remote_post(
+                    $url . self::API_PAYMENT_FORM,
+                    array(
+                        'method'  => 'POST',
+                        'timeout' => 45,
+                        'headers' => array(
+                            'Content-Type'  => 'application/json',
+                            'Authorization' => 'Bearer ' . $token,
+                        ),
+                        'cookies' => array(),
+                        'body'    => $body
+                    )
+                );
 
-                		if ( is_wp_error( $request ) || 200 !== wp_remote_retrieve_response_code( $request ) ) {
-                    			error_log( print_r( $request, true ) );
-                		} else {
-                    			$response = wp_remote_retrieve_body( $request );
-                    			$response = json_decode( $response, true );
+                if ( is_wp_error( $request ) || 200 !== wp_remote_retrieve_response_code( $request ) ) {
+                    error_log( print_r( $request, true ) );
+                } else {
+                    $response = wp_remote_retrieve_body( $request );
+                    $response = json_decode( $response, true );
 					if ($response['status'] == '99' || count($response['result']) == 0)
 						error_log( print_r( $request, true ) );
-                    			return $response['result'][0]['url'];
-                		}
+                    return $response['result'][0]['url'];
+                }
 			}
 
 			return false;
