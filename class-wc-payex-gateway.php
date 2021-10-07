@@ -242,7 +242,7 @@ function payex_init_gateway_class()
                 {
                     if (!$order->is_paid())
                     { // only mark order as completed if the order was not paid before.
-                        $order->payment_complete($_POST['txn_id']);
+                        $order->payment_complete(sanitize_text_field(wp_unslash($_POST['txn_id'])));
                         $order->reduce_order_stock();
                         WC_Subscriptions_Manager::activate_subscriptions_for_order( $order );
                     }
