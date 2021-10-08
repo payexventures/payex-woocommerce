@@ -242,7 +242,10 @@ function payex_init_gateway_class()
                 {
                     if (!$order->is_paid())
                     { // only mark order as completed if the order was not paid before.
-                        $order->payment_complete(sanitize_text_field(wp_unslash($_POST['txn_id'])));
+                        $gateway_id = sanitize_text_field(wp_unslash($_POST['mandate_reference_number']));
+                        if (!$gateway_id)
+                            $gateway_id = sanitize_text_field(wp_unslash($_POST['txn_id']));
+                        $order->payment_complete($gateway_id);
                         $order->reduce_order_stock();
                         WC_Subscriptions_Manager::activate_subscriptions_for_order( $order );
                     }
@@ -375,6 +378,20 @@ function payex_init_gateway_class()
                     $subscription_length = get_post_meta( $product_id, '_subscription_length', true );
                     $subscription_trial_period = get_post_meta( $product_id, '_subscription_trial_period', true );
                     $subscription_trial_length = get_post_meta( $product_id, '_subscription_trial_length', true );
+                    $subscription_sync_date = get_post_meta( $product_id, '_subscription_payment_sync_date', true );
+                    if (is_array($subscription_sync_date))
+                    {
+                        $subscription_sync_day = $subscription_sync_date['day'];
+                        $subscription_sync_month = $subscription_sync_date['month'];
+                    }
+                    else
+                    {
+                        $subscription_sync_day = $subscription_sync_date;
+                        // if no sync, set day to null
+                        if ($subscription_sync_day == 0) $subscription_sync_day = null;
+                        // if sunday, set day = 0
+                        if ($subscription_sync_day == 7 && $subscription_period == 'week') $subscription_sync_day = 0;
+                    }
                 }
             }
             
@@ -429,6 +446,9 @@ function payex_init_gateway_class()
                         "expiry_date" => $expiry_date,
                         "max_frequency" => 1,
                         "debit_type" => $debit_type,
+                        "day" => $subscription_sync_day,
+                        "month" => $subscription_sync_month,
+                        "auto" => false,
                         "customer_name" => $order_data['billing']['first_name'] . ' ' . $order_data['billing']['last_name'],
                         "contact_number" => $order_data['billing']['phone'],
                         "email" => $order_data['billing']['email'],
