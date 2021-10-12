@@ -57,6 +57,7 @@ function payex_init_gateway_class()
         const API_GET_TOKEN_PATH = 'api/Auth/Token';
         const API_PAYMENT_FORM = 'api/v1/PaymentIntents';
         const API_MANDATE_FORM = 'api/v1/Mandates';
+        const API_COLLECTIONS = 'api/v1/Mandates/Collections';
         const HOOK_NAME = 'payex_hook';
 
         /**
@@ -86,11 +87,13 @@ function payex_init_gateway_class()
             $this->enabled = $this->get_option('enabled');
             $this->testmode = 'yes' === $this->get_option('testmode');
 
-            $this->supports = array( 
-                'products', 
+            $this->supports = array(
+                'products',
                 'subscriptions',
-                // 'subscription_cancellation', 
-                // 'subscription_suspension', 
+                'subscription_amount_changes',
+                'subscription_date_changes',
+                // 'subscription_cancellation',
+                // 'subscription_suspension',
                 // 'subscription_reactivation',
             );
 
@@ -102,6 +105,13 @@ function payex_init_gateway_class()
             add_action('woocommerce_api_wc_payex_gateway', array(&$this,
                 'webhook'
             ));
+            if (class_exists('WC_Subscriptions_Order'))
+            {
+                add_action('woocommerce_scheduled_subscription_payment_' . $this->id, array(
+                    $this,
+                    'scheduled_subscription_payment'
+                ) , 10, 2);
+            }
         }
 
         /**
@@ -202,13 +212,13 @@ function payex_init_gateway_class()
             if ($token)
             {
                 // generate payex payment link.
-                if (class_exists( 'WC_Subscriptions_Order' ) && WC_Subscriptions_Order::order_contains_subscription($order_id))
+                if (class_exists('WC_Subscriptions_Order') && WC_Subscriptions_Order::order_contains_subscription($order_id))
                 {
-                    $payment_link = $this->get_payex_mandate_link($url, $order, WC()->api_request_url(get_class($this)), $token);
+                    $payment_link = $this->get_payex_mandate_link($url, $order, WC()->api_request_url(get_class($this)) , $token);
                 }
                 else
                 {
-                    $payment_link = $this->get_payex_payment_link($url, $order, WC()->api_request_url(get_class($this)), $token);
+                    $payment_link = $this->get_payex_payment_link($url, $order, WC()->api_request_url(get_class($this)) , $token);
                 }
 
                 // Redirect to checkout page on Payex.
@@ -216,7 +226,6 @@ function payex_init_gateway_class()
                     'result' => 'success',
                     'redirect' => $payment_link,
                 );
-
             }
             else
             {
@@ -224,7 +233,6 @@ function payex_init_gateway_class()
                 return;
             }
             // get token.
-            
         }
 
         /**
@@ -234,20 +242,27 @@ function payex_init_gateway_class()
         {
             $verified = $this->verify_payex_response($_POST); // phpcs:ignore
             if ($verified && isset($_POST['reference_number']) && isset($_POST['auth_code']))
-            { // phpcs:ignore
-                $order = wc_get_order(sanitize_text_field(wp_unslash($_POST['reference_number']))); // phpcs:ignore
+            { 
+                // phpcs:ignore
+                if (isset($_POST['collection_reference_number']))
+                {
+                    $order = wc_get_order(sanitize_text_field(wp_unslash($_POST['collection_reference_number']))); // phpcs:ignore
+                }
+                else
+                {
+                    $order = wc_get_order(sanitize_text_field(wp_unslash($_POST['reference_number']))); // phpcs:ignore
+                }
                 $auth_code = sanitize_text_field(wp_unslash($_POST['auth_code'])); // phpcs:ignore
                 // verify the payment is successful.
                 if (PAYEX_AUTH_CODE_SUCCESS == $auth_code)
                 {
                     if (!$order->is_paid())
-                    { // only mark order as completed if the order was not paid before.
-                        $gateway_id = sanitize_text_field(wp_unslash($_POST['mandate_reference_number']));
-                        if (!$gateway_id)
-                            $gateway_id = sanitize_text_field(wp_unslash($_POST['txn_id']));
-                        $order->payment_complete($gateway_id);
+                    {
+                        // only mark order as completed if the order was not paid before.
+                        $order->payment_complete(sanitize_text_field(wp_unslash($_POST['txn_id'])));
                         $order->reduce_order_stock();
-                        WC_Subscriptions_Manager::activate_subscriptions_for_order( $order );
+                        WC_Subscriptions_Manager::activate_subscriptions_for_order($order);
+                        update_post_meta($order->get_id() , 'payex_mandate_number', sanitize_text_field(wp_unslash($_POST['mandate_reference_number'])));
                     }
                 }
             }
@@ -287,7 +302,7 @@ function payex_init_gateway_class()
             {
                 $body = wp_json_encode(array(
                     array(
-                        "amount" => round($order_data['total'] * 100, 0),
+                        "amount" => round($order_data['total'] * 100, 0) ,
                         "currency" => $order_data['currency'],
                         "customer_id" => $order_data['customer_id'],
                         "description" => 'Payment for Order Reference:' . $order_data['order_key'],
@@ -374,11 +389,11 @@ function payex_init_gateway_class()
                 $product_id = $item_data['product_id'];
                 if (WC_Subscriptions_Product::is_subscription($product_id))
                 {
-                    $subscription_period = get_post_meta( $product_id, '_subscription_period', true );
-                    $subscription_length = get_post_meta( $product_id, '_subscription_length', true );
-                    $subscription_trial_period = get_post_meta( $product_id, '_subscription_trial_period', true );
-                    $subscription_trial_length = get_post_meta( $product_id, '_subscription_trial_length', true );
-                    $subscription_sync_date = get_post_meta( $product_id, '_subscription_payment_sync_date', true );
+                    $subscription_period = get_post_meta($product_id, '_subscription_period', true);
+                    $subscription_length = get_post_meta($product_id, '_subscription_length', true);
+                    $subscription_trial_period = get_post_meta($product_id, '_subscription_trial_period', true);
+                    $subscription_trial_length = get_post_meta($product_id, '_subscription_trial_length', true);
+                    $subscription_sync_date = get_post_meta($product_id, '_subscription_payment_sync_date', true);
                     if (is_array($subscription_sync_date))
                     {
                         $subscription_sync_day = $subscription_sync_date['day'];
@@ -394,38 +409,38 @@ function payex_init_gateway_class()
                     }
                 }
             }
-            
-            $initial_payment = WC_Subscriptions_Order::get_total_initial_payment( $order );
-            $price_per_period = WC_Subscriptions_Order::get_recurring_total( $order );
-            $subscription_interval = WC_Subscriptions_Order::get_subscription_interval( $order );
-            
+
+            $initial_payment = WC_Subscriptions_Order::get_total_initial_payment($order);
+            $price_per_period = WC_Subscriptions_Order::get_recurring_total($order);
+            $subscription_interval = WC_Subscriptions_Order::get_subscription_interval($order);
+
             if ($subscription_trial_length > 0)
             {
-                $effective_date = date("Ymd", strtotime(date("Ymd")."+$subscription_trial_length $subscription_trial_period"));
+                $effective_date = date("Ymd", strtotime(date("Ymd") . "+$subscription_trial_length $subscription_trial_period"));
             }
             else
             {
                 $effective_date = date("Ymd");
             }
 
-            switch ($subscription_period) 
+            switch ($subscription_period)
             {
                 case 'day':
                     $frequency = 'DL';
-                    break;
+                break;
                 case 'week':
                     $frequency = 'WK';
-                    break;
+                break;
                 case 'month':
                     $frequency = 'MT';
-                    break;
+                break;
                 case 'year':
                     $frequency = 'YR';
-                    break;
+                break;
             }
 
             $subscription_length -= 1;
-            $expiry_date = date("Ymd", strtotime($effective_date."+$subscription_length $subscription_period"));
+            $expiry_date = date("Ymd", strtotime($effective_date . "+$subscription_length $subscription_period"));
             if ($subscription_period == 'month' || $subscription_period == 'year') $expiry_date = date('Ymd', strtotime("-1 day", strtotime(date('Ym01', strtotime($effective_date)))));
             if ($subscription_length <= 0) $expiry_date = null;
             if ($initial_payment > 0) $debit_type = "AD";
@@ -434,8 +449,8 @@ function payex_init_gateway_class()
             {
                 $body = wp_json_encode(array(
                     array(
-                        "max_amount" => round($price_per_period * 100, 0),
-                        "initial_amount" => round($initial_payment * 100, 0),
+                        "max_amount" => round($price_per_period * 100, 0) ,
+                        "initial_amount" => round($initial_payment * 100, 0) ,
                         "currency" => $order_data['currency'],
                         "customer_id" => $order_data['customer_id'],
                         "purpose" => 'Payment for Order Reference:' . $order_data['order_key'],
@@ -497,6 +512,76 @@ function payex_init_gateway_class()
             }
 
             return false;
+        }
+
+        /**
+         * scheduled_subscription_payment function.
+         *
+         * This function is called when renewal order is triggered.
+         *
+         * @param $amount_to_charge float The amount to charge.
+         * @param $renewal_order WC_Order A WC_Order object created to record the renewal payment.
+         */
+        public function scheduled_subscription_payment($amount_to_charge, $renewal_order)
+        {
+            $url = self::API_URL;
+
+            if ($this->get_option('testmode') === 'yes')
+            {
+                $url = self::API_URL_SANDBOX;
+            }
+
+            $token = $this->get_payex_token($url);
+
+            if ($token)
+            {
+                $order_id = $renewal_order->get_id();
+                $parent_id = $renewal_order->get_parent_id();
+                $mandate_number = get_post_meta($parent_id, 'payex_mandate_number', true);
+
+                $body = wp_json_encode(array(
+                    array(
+                        "reference_number" => $mandate_number,
+                        "collection_reference_number" => $order_id,
+                        "amount" => round($amount_to_charge * 100, 0) ,
+                        "collection_date" => date("Ymd")
+                    )
+                ));
+
+                $request = wp_remote_post($url . self::API_COLLECTIONS, array(
+                    'method' => 'POST',
+                    'timeout' => 45,
+                    'headers' => array(
+                        'Content-Type' => 'application/json',
+                        'Authorization' => 'Bearer ' . $token,
+                    ) ,
+                    'cookies' => array() ,
+                    'body' => $body
+                ));
+
+                if (is_wp_error($request) || 200 !== wp_remote_retrieve_response_code($request))
+                {
+                    error_log(print_r($request, true));
+                }
+                else
+                {
+                    $response = wp_remote_retrieve_body($request);
+                    $response = json_decode($response, true);
+                    if ($response['status'] == '99' || count($response['result']) == 0 || (count($response['result']) != 0 && $response['result'][0]['status'] == '99'))
+                    {
+                        $error = $response['result'][0]['error'];
+                        $renewal_order->update_status('failed', $error);
+                        error_log(print_r($error, true));
+                    }
+
+                    update_post_meta($order_id, 'payex_collection_number', $response['result'][0]['collection_number']);
+                }
+            }
+
+            if (is_wp_error($response))
+            {
+                $renewal_order->update_status('failed', 'test fail');
+            }
         }
 
         /**
