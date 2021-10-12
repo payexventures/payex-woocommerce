@@ -73,10 +73,6 @@ function payex_init_gateway_class()
             $this->method_description = 'Accept Online Banking, Cards, EWallets and Instalments using Payex Payment Gateway (https://www.payex.io/)'; // will be displayed on the options page.
             $this->order_button_text = 'Pay via Payex';
 
-            $this->supports = array(
-                'products',
-            );
-
             // Method with all the options fields.
             $this->init_form_fields();
 
@@ -92,25 +88,20 @@ function payex_init_gateway_class()
                 'subscriptions',
                 'subscription_amount_changes',
                 'subscription_date_changes',
-                // 'subscription_cancellation',
-                // 'subscription_suspension',
-                // 'subscription_reactivation',
+                'subscription_cancellation',
+                'subscription_suspension',
+                'subscription_reactivation',
             );
 
             // This action hook saves the settings.
-            add_action('woocommerce_update_options_payment_gateways_' . $this->id, array(
-                $this,
-                'process_admin_options'
-            ));
-            add_action('woocommerce_api_wc_payex_gateway', array(&$this,
-                'webhook'
-            ));
+            add_action('woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ));
+            add_action('woocommerce_api_wc_payex_gateway', array(&$this, 'webhook'));
             if (class_exists('WC_Subscriptions_Order'))
             {
-                add_action('woocommerce_scheduled_subscription_payment_' . $this->id, array(
-                    $this,
-                    'scheduled_subscription_payment'
-                ) , 10, 2);
+                add_action('woocommerce_scheduled_subscription_payment_' . $this->id, array( $this, 'scheduled_subscription_payment' ), 10, 2);
+			    add_action('woocommerce_subscription_failing_payment_method_updated_' . $this->id, array( $this, 'update_failing_payment_method' ), 10, 2);
+                add_action('wcs_resubscribe_order_created', array( $this, 'delete_resubscribe_meta' ), 10);
+			    add_action('wcs_renewal_order_created', array( $this, 'delete_renewal_meta' ), 10);
             }
         }
 
@@ -119,7 +110,6 @@ function payex_init_gateway_class()
          */
         public function init_form_fields()
         {
-
             $this->form_fields = array(
                 'enabled' => array(
                     'title' => 'Enable/Disable',
@@ -515,14 +505,11 @@ function payex_init_gateway_class()
         }
 
         /**
-         * scheduled_subscription_payment function.
-         *
-         * This function is called when renewal order is triggered.
-         *
-         * @param $amount_to_charge float The amount to charge.
-         * @param $renewal_order WC_Order A WC_Order object created to record the renewal payment.
-         */
-        public function scheduled_subscription_payment($amount_to_charge, $renewal_order)
+	     * process_subscription_payment function.
+	     * @param mixed $order
+	     * @param int $amount (default: 0)
+	     */
+	    public function process_subscription_payment($amount_to_charge, $renewal_order) 
         {
             $url = self::API_URL;
 
@@ -584,7 +571,48 @@ function payex_init_gateway_class()
                 $renewal_order->update_status('failed', 'Invalid Token');
                 error_log(print_r($request, true));
             }
+	    }
+
+        /**
+         * scheduled_subscription_payment function.
+         *
+         * This function is called when renewal order is triggered.
+         *
+         * @param $amount_to_charge float The amount to charge.
+         * @param $renewal_order WC_Order A WC_Order object created to record the renewal payment.
+         */
+        public function scheduled_subscription_payment($amount_to_charge, $renewal_order)
+        {
+            $this->process_subscription_payment( $amount_to_charge, $renewal_order );
         }
+
+        /**
+	     * @param int $resubscribe_order The order created for the customer to resubscribe to the old expired/cancelled subscription
+	     */
+	    public function delete_resubscribe_meta( $resubscribe_order ) 
+        {
+		    $this->delete_renewal_meta( $resubscribe_order );
+	    }
+
+	    /**
+	     * @param int $resubscribe_order The order created for the customer to resubscribe to the old expired/cancelled subscription
+	     */
+	    public function delete_renewal_meta( $renewal_order ) 
+        {
+		    return $renewal_order;
+	    }
+
+        /**
+	     * an automatic renewal payment which previously failed.
+	     *
+	     * @access public
+	     * @param WC_Subscription $subscription The subscription for which the failing payment method relates.
+	     * @param WC_Order $renewal_order The order which recorded the successful payment (to make up for the failed automatic payment).
+	     * @return void
+	     */
+	    public function update_failing_payment_method( $subscription, $renewal_order ) 
+        {
+	    }
 
         /**
          * Get Payex Token
