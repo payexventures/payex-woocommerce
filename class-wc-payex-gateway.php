@@ -561,6 +561,7 @@ function payex_init_gateway_class()
 
                 if (is_wp_error($request) || 200 !== wp_remote_retrieve_response_code($request))
                 {
+                    $renewal_order->update_status('failed', 'Invalid Request');
                     error_log(print_r($request, true));
                 }
                 else
@@ -569,7 +570,8 @@ function payex_init_gateway_class()
                     $response = json_decode($response, true);
                     if ($response['status'] == '99' || count($response['result']) == 0 || (count($response['result']) != 0 && $response['result'][0]['status'] == '99'))
                     {
-                        $error = $response['result'][0]['error'];
+                        $error = $response['message'];
+                        if (count($response['result']) != 0) $error = $response['result'][0]['error'];
                         $renewal_order->update_status('failed', $error);
                         error_log(print_r($error, true));
                     }
@@ -577,10 +579,10 @@ function payex_init_gateway_class()
                     update_post_meta($order_id, 'payex_collection_number', $response['result'][0]['collection_number']);
                 }
             }
-
-            if (is_wp_error($response))
+            else
             {
-                $renewal_order->update_status('failed', 'test fail');
+                $renewal_order->update_status('failed', 'Invalid Token');
+                error_log(print_r($request, true));
             }
         }
 
