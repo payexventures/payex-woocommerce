@@ -439,20 +439,16 @@ function payex_init_gateway_class()
             {
                 $body = wp_json_encode(array(
                     array(
-                        "max_amount" => round($price_per_period * 100, 0) ,
+                        "max_amount" => max(3000000, round($price_per_period * 100, 0)) ,
                         "initial_amount" => round($initial_payment * 100, 0) ,
                         "currency" => $order_data['currency'],
                         "customer_id" => $order_data['customer_id'],
                         "purpose" => 'Payment for Order Reference:' . $order_data['order_key'],
                         "merchant_reference_number" => $order_data['id'],
-                        "frequency" => $frequency,
-                        "frequency_interval" => $subscription_interval,
-                        "effective_date" => $effective_date,
-                        "expiry_date" => $expiry_date,
-                        "max_frequency" => 1,
+                        "frequency" => 'DL',
+                        "effective_date" => date("Ymd"),
+                        "max_frequency" => 999,
                         "debit_type" => $debit_type,
-                        "day" => $subscription_sync_day,
-                        "month" => $subscription_sync_month,
                         "auto" => false,
                         "customer_name" => $order_data['billing']['first_name'] . ' ' . $order_data['billing']['last_name'],
                         "contact_number" => $order_data['billing']['phone'],
@@ -473,6 +469,15 @@ function payex_init_gateway_class()
                         "reject_url" => $reject_url,
                         "callback_url" => $callback_url,
                         "items" => $items,
+                        "metadata" => array(
+                            "price_per_period" => $price_per_period,
+                            "frequency" => $frequency,
+                            "frequency_interval" => $subscription_interval,
+                            "effective_date" => $effective_date,
+                            "expiry_date" => $expiry_date,
+                            "day" => $subscription_sync_day,
+                            "month" => $subscription_sync_month,
+                        ),
                         "source" => "wordpress"
                     )
                 ));
@@ -523,7 +528,9 @@ function payex_init_gateway_class()
             if ($token)
             {
                 $order_id = $renewal_order->get_id();
-                $parent_id = $renewal_order->get_parent_id();
+                $subscription_id = get_post_meta($order_id, '_subscription_renewal', true);
+                $subscription_order = wc_get_order($subscription_id);
+                $parent_id = $subscription_order->get_parent_id();
                 $mandate_number = get_post_meta($parent_id, 'payex_mandate_number', true);
 
                 $body = wp_json_encode(array(
