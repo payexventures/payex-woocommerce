@@ -70,7 +70,7 @@ function payex_init_gateway_class()
             $this->icon = 'https://payexpublic.blob.core.windows.net/storage/payex_woocommerce.jpg'; // URL of the icon that will be displayed on checkout page near your gateway name.
             $this->has_fields = true; // in case you need a custom credit card form.
             $this->method_title = 'Payex Payment Gateway';
-            $this->method_description = 'Accept Online Banking, Cards, EWallets and Instalments using Payex Payment Gateway (https://www.payex.io/)'; // will be displayed on the options page.
+            $this->method_description = 'Accept Online Banking, Cards, EWallets, Instalments and Subscriptions using Payex Payment Gateway (https://www.payex.io/)'; // will be displayed on the options page.
             $this->order_button_text = 'Pay via Payex';
 
             // Method with all the options fields.
@@ -100,9 +100,9 @@ function payex_init_gateway_class()
             if (class_exists('WC_Subscriptions_Order'))
             {
                 add_action('woocommerce_scheduled_subscription_payment_' . $this->id, array( $this, 'scheduled_subscription_payment' ), 10, 2);
-			    add_action('woocommerce_subscription_failing_payment_method_updated_' . $this->id, array( $this, 'update_failing_payment_method' ), 10, 2);
+		add_action('woocommerce_subscription_failing_payment_method_updated_' . $this->id, array( $this, 'update_failing_payment_method' ), 10, 2);
                 add_action('wcs_resubscribe_order_created', array( $this, 'delete_resubscribe_meta' ), 10);
-			    add_action('wcs_renewal_order_created', array( $this, 'delete_renewal_meta' ), 10);
+		add_action('wcs_renewal_order_created', array( $this, 'delete_renewal_meta' ), 10);
             }
         }
 
