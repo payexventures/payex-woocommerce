@@ -91,6 +91,7 @@ function payex_init_gateway_class()
                 'subscription_cancellation',
                 'subscription_suspension',
                 'subscription_reactivation',
+                'multiple_subscriptions',
             );
 
             // This action hook saves the settings.
@@ -231,20 +232,22 @@ function payex_init_gateway_class()
         public function webhook()
         {
             $verified = $this->verify_payex_response($_POST); // phpcs:ignore
-            if ($verified && isset($_POST['reference_number']) && isset($_POST['auth_code']))
+            if ($verified && isset($_POST['reference_number']) && (isset($_POST['auth_code']) || isset($_POST['collection_status'])))
             { 
                 // phpcs:ignore
                 if (isset($_POST['collection_reference_number']))
                 {
                     $order = wc_get_order(sanitize_text_field(wp_unslash($_POST['collection_reference_number']))); // phpcs:ignore
+                    $response_code = sanitize_text_field(wp_unslash($_POST['collection_status'])); // phpcs:ignore
                 }
                 else
                 {
                     $order = wc_get_order(sanitize_text_field(wp_unslash($_POST['reference_number']))); // phpcs:ignore
+                    $response_code = sanitize_text_field(wp_unslash($_POST['auth_code'])); // phpcs:ignore
                 }
-                $auth_code = sanitize_text_field(wp_unslash($_POST['auth_code'])); // phpcs:ignore
+                
                 // verify the payment is successful.
-                if (PAYEX_AUTH_CODE_SUCCESS == $auth_code)
+                if (PAYEX_AUTH_CODE_SUCCESS == $response_code)
                 {
                     if (!$order->is_paid())
                     {
@@ -369,6 +372,7 @@ function payex_init_gateway_class()
             }
 
             $items = array();
+            $subscriptions = array();
 
             foreach ($order_items as $item_id => $item)
             {
@@ -379,67 +383,29 @@ function payex_init_gateway_class()
                 $product_id = $item_data['product_id'];
                 if (WC_Subscriptions_Product::is_subscription($product_id))
                 {
-                    $subscription_period = get_post_meta($product_id, '_subscription_period', true);
-                    $subscription_length = get_post_meta($product_id, '_subscription_length', true);
-                    $subscription_trial_period = get_post_meta($product_id, '_subscription_trial_period', true);
-                    $subscription_trial_length = get_post_meta($product_id, '_subscription_trial_length', true);
-                    $subscription_sync_date = get_post_meta($product_id, '_subscription_payment_sync_date', true);
-                    if (is_array($subscription_sync_date))
-                    {
-                        $subscription_sync_day = $subscription_sync_date['day'];
-                        $subscription_sync_month = $subscription_sync_date['month'];
-                    }
-                    else
-                    {
-                        $subscription_sync_day = $subscription_sync_date;
-                        // if no sync, set day to null
-                        if ($subscription_sync_day == 0) $subscription_sync_day = null;
-                        // if sunday, set day = 0
-                        if ($subscription_sync_day == 7 && $subscription_period == 'week') $subscription_sync_day = 0;
-                    }
+                    $subscriptions[$product_id] = array(
+                        "price" => get_post_meta($product_id, '_subscription_price', true),
+                        "sign_up_fee" => get_post_meta($product_id, '_subscription_sign_up_fee', true),
+                        "period" => get_post_meta($product_id, '_subscription_period', true),
+                        "interval" => get_post_meta($product_id, '_subscription_period_interval', true),
+                        "length" => get_post_meta($product_id, '_subscription_length', true),
+                        "trial_period" => get_post_meta($product_id, '_subscription_trial_period', true),
+                        "trial_length" => get_post_meta($product_id, '_subscription_trial_length', true),
+                        "sync_date" => get_post_meta($product_id, '_subscription_payment_sync_date', true),
+                    );
                 }
             }
 
             $initial_payment = WC_Subscriptions_Order::get_total_initial_payment($order);
-            $price_per_period = WC_Subscriptions_Order::get_recurring_total($order);
-            $subscription_interval = WC_Subscriptions_Order::get_subscription_interval($order);
+            $amount = WC_Subscriptions_Order::get_recurring_total($order);
 
-            if ($subscription_trial_length > 0)
-            {
-                $effective_date = date("Ymd", strtotime(date("Ymd") . "+$subscription_trial_length $subscription_trial_period"));
-            }
-            else
-            {
-                $effective_date = date("Ymd");
-            }
-
-            switch ($subscription_period)
-            {
-                case 'day':
-                    $frequency = 'DL';
-                break;
-                case 'week':
-                    $frequency = 'WK';
-                break;
-                case 'month':
-                    $frequency = 'MT';
-                break;
-                case 'year':
-                    $frequency = 'YR';
-                break;
-            }
-
-            $subscription_length -= 1;
-            $expiry_date = date("Ymd", strtotime($effective_date . "+$subscription_length $subscription_period"));
-            if ($subscription_period == 'month' || $subscription_period == 'year') $expiry_date = date('Ymd', strtotime("-1 day", strtotime(date('Ym01', strtotime($effective_date)))));
-            if ($subscription_length <= 0) $expiry_date = null;
             if ($initial_payment > 0) $debit_type = "AD";
 
             if ($token)
             {
                 $body = wp_json_encode(array(
                     array(
-                        "max_amount" => max(3000000, round($price_per_period * 100, 0)) ,
+                        "max_amount" => max(3000000, round($amount * 100, 0)) ,
                         "initial_amount" => round($initial_payment * 100, 0) ,
                         "currency" => $order_data['currency'],
                         "customer_id" => $order_data['customer_id'],
@@ -469,15 +435,7 @@ function payex_init_gateway_class()
                         "reject_url" => $reject_url,
                         "callback_url" => $callback_url,
                         "items" => $items,
-                        "metadata" => array(
-                            "price_per_period" => $price_per_period,
-                            "frequency" => $frequency,
-                            "frequency_interval" => $subscription_interval,
-                            "effective_date" => $effective_date,
-                            "expiry_date" => $expiry_date,
-                            "day" => $subscription_sync_day,
-                            "month" => $subscription_sync_month,
-                        ),
+                        "metadata" => $subscriptions,
                         "source" => "wordpress"
                     )
                 ));
