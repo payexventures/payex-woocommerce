@@ -58,6 +58,7 @@ function payex_init_gateway_class()
         const API_PAYMENT_FORM = 'api/v1/PaymentIntents';
         const API_MANDATE_FORM = 'api/v1/Mandates';
         const API_COLLECTIONS = 'api/v1/Mandates/Collections';
+        const API_CHARGES = 'api/v1/Transactions/Charges';
         const HOOK_NAME = 'payex_hook';
 
         /**
@@ -100,9 +101,9 @@ function payex_init_gateway_class()
             if (class_exists('WC_Subscriptions_Order'))
             {
                 add_action('woocommerce_scheduled_subscription_payment_' . $this->id, array( $this, 'scheduled_subscription_payment' ), 10, 2);
-		add_action('woocommerce_subscription_failing_payment_method_updated_' . $this->id, array( $this, 'update_failing_payment_method' ), 10, 2);
+                add_action('woocommerce_subscription_failing_payment_method_updated_' . $this->id, array( $this, 'update_failing_payment_method' ), 10, 2);
                 add_action('wcs_resubscribe_order_created', array( $this, 'delete_resubscribe_meta' ), 10);
-		add_action('wcs_renewal_order_created', array( $this, 'delete_renewal_meta' ), 10);
+                add_action('wcs_renewal_order_created', array( $this, 'delete_renewal_meta' ), 10);
             }
         }
 
@@ -245,19 +246,12 @@ function payex_init_gateway_class()
                     $order = wc_get_order(sanitize_text_field(wp_unslash($_POST['reference_number']))); // phpcs:ignore
                     $response_code = sanitize_text_field(wp_unslash($_POST['auth_code'])); // phpcs:ignore
                 }
-                
-                // verify the payment is successful.
-                if (PAYEX_AUTH_CODE_SUCCESS == $response_code)
-                {
-                    if (!$order->is_paid())
-                    {
-                        // only mark order as completed if the order was not paid before.
-                        $order->payment_complete(sanitize_text_field(wp_unslash($_POST['txn_id'])));
-                        $order->reduce_order_stock();
-                        WC_Subscriptions_Manager::activate_subscriptions_for_order($order);
-                        update_post_meta($order->get_id() , 'payex_mandate_number', sanitize_text_field(wp_unslash($_POST['mandate_reference_number'])));
-                    }
-                }
+
+                $txn_id = sanitize_text_field(wp_unslash($_POST['txn_id']));
+                $txn_type = sanitize_text_field(wp_unslash($_POST['txn_type']));
+                $mandate_number = sanitize_text_field(wp_unslash($_POST['mandate_reference_number']));
+
+                $this->complete_payment($order, $txn_id, $mandate_number, $txn_type, $response_code);
             }
         }
 
@@ -490,6 +484,7 @@ function payex_init_gateway_class()
                 $subscription_order = wc_get_order($subscription_id);
                 $parent_id = $subscription_order->get_parent_id();
                 $mandate_number = get_post_meta($parent_id, 'payex_mandate_number', true);
+                $txn_type = get_post_meta($parent_id, 'payex_txn_type', true);
 
                 $body = wp_json_encode(array(
                     array(
@@ -528,7 +523,37 @@ function payex_init_gateway_class()
                         error_log(print_r($error, true));
                     }
 
-                    update_post_meta($order_id, 'payex_collection_number', $response['result'][0]['collection_number']);
+                    $collection_number = $response['result'][0]['collection_number'];
+
+                    update_post_meta($order_id, 'payex_collection_number', $collection_number);
+
+                    // if auto debit, charge immediately
+                    if ($txn_type != 'Mandate - Authorization')
+                    {
+                        $request = wp_remote_post($url . self::API_CHARGES, array(
+                            'method' => 'POST',
+                            'timeout' => 45,
+                            'headers' => array(
+                                'Content-Type' => 'application/json',
+                                'Authorization' => 'Bearer ' . $token,
+                            ) ,
+                            'cookies' => array() ,
+                            'body' => wp_json_encode(array(
+                                'collection_number' => $collection_number
+                            ))
+                        ));
+
+                        $response = wp_remote_retrieve_body($request);
+                        $response = json_decode($response, true);
+
+                        $this->complete_payment(
+                            $renewal_order, 
+                            $response['txn_id'], 
+                            $response['mandate_reference_number'], 
+                            $response['txn_type'], 
+                            $response['auth_code']
+                        );
+                    }
                 }
             }
             else
@@ -637,6 +662,30 @@ function payex_init_gateway_class()
                 }
             }
             return false;
+        }
+
+        /**
+         * Generate Payment form link to allow users to Pay
+         *
+         * @param  string      $order           Customer order.
+         * @param  string      $response        Payex response.
+         * @param  string      $response_code   Payex response code.
+         */
+        private function complete_payment($order, $txn_id, $mandate_number, $txn_type, $response_code)
+        {
+            // verify the payment is successful.
+            if (PAYEX_AUTH_CODE_SUCCESS == $response_code)
+            {
+                if (!$order->is_paid())
+                {
+                    // only mark order as completed if the order was not paid before.
+                    $order->payment_complete($txn_id);
+                    $order->reduce_order_stock();
+                    WC_Subscriptions_Manager::activate_subscriptions_for_order($order);
+                    update_post_meta($order->get_id() , 'payex_txn_type', $txn_type);
+                    if ($mandate_number) update_post_meta($order->get_id(), 'payex_mandate_number', $mandate_number);
+                }
+            }
         }
     }
 }
