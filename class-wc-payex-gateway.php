@@ -366,7 +366,9 @@ function payex_init_gateway_class()
             }
 
             $items = array();
-            $subscriptions = array();
+            $metadata = array();
+            $autoDebit = false;
+            $cutoff = date('Y-m-d', strtotime(date('Y-m-d')."+2weekdays"));
 
             foreach ($order_items as $item_id => $item)
             {
@@ -377,7 +379,7 @@ function payex_init_gateway_class()
                 $product_id = $item_data['product_id'];
                 if (WC_Subscriptions_Product::is_subscription($product_id))
                 {
-                    $subscriptions[$product_id] = array(
+                    $metadata[$product_id] = array(
                         "price" => get_post_meta($product_id, '_subscription_price', true),
                         "sign_up_fee" => get_post_meta($product_id, '_subscription_sign_up_fee', true),
                         "period" => get_post_meta($product_id, '_subscription_period', true),
@@ -386,14 +388,28 @@ function payex_init_gateway_class()
                         "trial_period" => get_post_meta($product_id, '_subscription_trial_period', true),
                         "trial_length" => get_post_meta($product_id, '_subscription_trial_length', true),
                         "sync_date" => get_post_meta($product_id, '_subscription_payment_sync_date', true),
+                        "type" => 'product'
                     );
                 }
+            }
+
+            $subscriptions = wcs_get_subscriptions_for_order($order->get_id());
+
+            foreach ($subscriptions as $subscription) 
+            {
+                $subscription_id = $subscription->get_id();
+                $next = get_post_meta($subscription_id, '_schedule_next_payment', true);
+                if (date('Y-m-d', strtotime($next)) < $cutoff) $autoDebit = true;
+                $metadata[$subscription_id] = array(
+                    "next" => $next,
+                    "type" => 'subscription'
+                );
             }
 
             $initial_payment = WC_Subscriptions_Order::get_total_initial_payment($order);
             $amount = WC_Subscriptions_Order::get_recurring_total($order);
 
-            if ($initial_payment > 0) $debit_type = "AD";
+            if ($initial_payment > 0 || $autoDebit) $debit_type = "AD";
 
             if ($token)
             {
@@ -429,7 +445,7 @@ function payex_init_gateway_class()
                         "reject_url" => $reject_url,
                         "callback_url" => $callback_url,
                         "items" => $items,
-                        "metadata" => $subscriptions,
+                        "metadata" => $metadata,
                         "source" => "wordpress"
                     )
                 ));
