@@ -697,7 +697,6 @@ function payex_init_gateway_class()
                     // only mark order as completed if the order was not paid before.
                     $order->payment_complete($txn_id);
                     $order->reduce_order_stock();
-                    WC_Subscriptions_Manager::activate_subscriptions_for_order($order);
                     update_post_meta($order->get_id() , 'payex_txn_type', $txn_type);
                     if ($mandate_number) update_post_meta($order->get_id(), 'payex_mandate_number', $mandate_number);
                 }
