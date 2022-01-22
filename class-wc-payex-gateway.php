@@ -8,7 +8,7 @@
  * Plugin Name:       Payex Payment Gateway for Woocommerce
  * Plugin URI:        https://payex.io
  * Description:       Accept Online Banking, Cards, EWallets, Instalments, and Subscription payments using Payex
- * Version:           1.2.0
+ * Version:           1.2.1
  * Requires at least: 4.7
  * Requires PHP:      7.0
  * Author:            Payex Ventures Sdn Bhd
@@ -25,6 +25,11 @@ if (!defined('ABSPATH'))
 const PAYEX_AUTH_CODE_SUCCESS = '00';
 const PAYEX_AUTH_CODE_PENDING = '09';
 const PAYEX_AUTH_CODE_PENDING_2 = '99';
+const DIRECT_DEBIT = 'Direct Debit';
+const AUTO_DEBIT = 'Auto Debit';
+const DIRECT_DEBIT_AUTHORIZATION = 'Mandate - Authorization';
+const DIRECT_DEBIT_APPROVAL = 'Mandate - Approval';
+const AUTO_DEBIT_AUTHORIZATION = 'Auto Debit - Authorization';
 
 // Registers payment gateway.
 add_filter('woocommerce_payment_gateways', 'payex_add_gateway_class');
@@ -233,13 +238,19 @@ function payex_init_gateway_class()
         public function webhook()
         {
             $verified = $this->verify_payex_response($_POST); // phpcs:ignore
-            if ($verified && isset($_POST['reference_number']) && (isset($_POST['auth_code']) || isset($_POST['collection_status'])))
+            if ($verified && isset($_POST['reference_number']) && 
+                (isset($_POST['auth_code']) || isset($_POST['approval_status']) || isset($_POST['collection_status'])))
             { 
                 // phpcs:ignore
-                if (isset($_POST['collection_reference_number']))
+                if (isset($_POST['collection_status']))
                 {
                     $order = wc_get_order(sanitize_text_field(wp_unslash($_POST['collection_reference_number']))); // phpcs:ignore
                     $response_code = sanitize_text_field(wp_unslash($_POST['collection_status'])); // phpcs:ignore
+                }
+                else if (isset($_POST['approval_status']))
+                {
+                    $order = wc_get_order(sanitize_text_field(wp_unslash($_POST['reference_number']))); // phpcs:ignore
+                    $response_code = sanitize_text_field(wp_unslash($_POST['approval_status'])); // phpcs:ignore
                 }
                 else
                 {
@@ -478,11 +489,11 @@ function payex_init_gateway_class()
         }
 
         /**
-	     * process_subscription_payment function.
-	     * @param mixed $order
-	     * @param int $amount (default: 0)
-	     */
-	    public function process_subscription_payment($amount_to_charge, $renewal_order) 
+         * process_subscription_payment function.
+         * @param mixed $order
+         * @param int $amount (default: 0)
+         */
+        public function process_subscription_payment($amount_to_charge, $renewal_order) 
         {
             $url = self::API_URL;
 
@@ -544,8 +555,10 @@ function payex_init_gateway_class()
                     update_post_meta($order_id, 'payex_collection_number', $collection_number);
 
                     // if auto debit, charge immediately
-                    if ($txn_type != 'Mandate - Authorization')
+                    if ($txn_type != DIRECT_DEBIT)
                     {
+                        $renewal_order->add_order_note( 'Auto Debit charge initiated', false );
+
                         $request = wp_remote_post($url . self::API_CHARGES, array(
                             'method' => 'POST',
                             'timeout' => 45,
@@ -570,6 +583,10 @@ function payex_init_gateway_class()
                             $response['auth_code']
                         );
                     }
+                    else
+                    {
+                        $renewal_order->add_order_note( 'Direct Debit charge initiated, pending bank approval. Please do not make any changes to avoid duplicate charges', false );
+                    }
                 }
             }
             else
@@ -577,7 +594,7 @@ function payex_init_gateway_class()
                 $renewal_order->update_status('failed', 'Invalid Token');
                 error_log(print_r($request, true));
             }
-	    }
+        }
 
         /**
          * scheduled_subscription_payment function.
@@ -593,32 +610,32 @@ function payex_init_gateway_class()
         }
 
         /**
-	     * @param int $resubscribe_order The order created for the customer to resubscribe to the old expired/cancelled subscription
-	     */
-	    public function delete_resubscribe_meta( $resubscribe_order ) 
+         * @param int $resubscribe_order The order created for the customer to resubscribe to the old expired/cancelled subscription
+         */
+        public function delete_resubscribe_meta( $resubscribe_order ) 
         {
-		    $this->delete_renewal_meta( $resubscribe_order );
-	    }
-
-	    /**
-	     * @param int $resubscribe_order The order created for the customer to resubscribe to the old expired/cancelled subscription
-	     */
-	    public function delete_renewal_meta( $renewal_order ) 
-        {
-		    return $renewal_order;
-	    }
+            $this->delete_renewal_meta( $resubscribe_order );
+        }
 
         /**
-	     * an automatic renewal payment which previously failed.
-	     *
-	     * @access public
-	     * @param WC_Subscription $subscription The subscription for which the failing payment method relates.
-	     * @param WC_Order $renewal_order The order which recorded the successful payment (to make up for the failed automatic payment).
-	     * @return void
-	     */
-	    public function update_failing_payment_method( $subscription, $renewal_order ) 
+         * @param int $resubscribe_order The order created for the customer to resubscribe to the old expired/cancelled subscription
+         */
+        public function delete_renewal_meta( $renewal_order ) 
         {
-	    }
+            return $renewal_order;
+        }
+
+        /**
+         * an automatic renewal payment which previously failed.
+         *
+         * @access public
+         * @param WC_Subscription $subscription The subscription for which the failing payment method relates.
+         * @param WC_Order $renewal_order The order which recorded the successful payment (to make up for the failed automatic payment).
+         * @return void
+         */
+        public function update_failing_payment_method( $subscription, $renewal_order ) 
+        {
+        }
 
         /**
          * Get Payex Token
@@ -697,9 +714,40 @@ function payex_init_gateway_class()
                     // only mark order as completed if the order was not paid before.
                     $order->payment_complete($txn_id);
                     $order->reduce_order_stock();
-                    update_post_meta($order->get_id() , 'payex_txn_type', $txn_type);
+                    $order->add_order_note( 'Payment completed via Payex (Txn ID: '.$txn_id.')', false );
+
+                    if ($txn_type == DIRECT_DEBIT_AUTHORIZATION)
+                    {
+                        update_post_meta($order->get_id() , 'payex_txn_type', DIRECT_DEBIT);
+                    }
+                    else if ($txn_type == AUTO_DEBIT_AUTHORIZATION)
+                    {
+                        update_post_meta($order->get_id() , 'payex_txn_type', AUTO_DEBIT);
+                    }
+                    else
+                    {
+                        update_post_meta($order->get_id() , 'payex_txn_type', $txn_type);
+                    }
+                    
                     if ($mandate_number) update_post_meta($order->get_id(), 'payex_mandate_number', $mandate_number);
                 }
+
+                if ($txn_type == DIRECT_DEBIT_AUTHORIZATION)
+                {
+                    $order->add_order_note( 'Mandate ('.$mandate_number.') authorized by customer, pending bank approval', false );
+                }
+                else if ($txn_type == DIRECT_DEBIT_APPROVAL)
+                {
+                    $order->add_order_note( 'Mandate ('.$mandate_number.') approved by bank', false );
+                }
+                else if ($txn_type == DIRECT_DEBIT)
+                {
+                    $order->add_order_note( 'Direct Debit collection approved by bank', false );
+                }
+            }
+            else 
+            {
+                $order->add_order_note( 'Payex Payment failed with Response Code: ' . $response_code, false );
             }
         }
     }
