@@ -138,13 +138,13 @@ function payex_init_gateway_class()
                     'default' => 'Pay via Payex using Online Banking, Cards, EWallets and Instalments',
                 ) ,
                 'button' => array(
-                    'title' => 'Button',
+                    'title' => 'Order Button Text',
                     'type' => 'text',
                     'description' => 'This controls the order button text which the user sees during checkout',
                     'default' => 'Pay via Payex',
                 ) ,
                 'testmode' => array(
-                    'title' => 'Sandbox environment',
+                    'title' => 'Sandbox Environment',
                     'label' => 'Enable sandbox environment',
                     'type' => 'checkbox',
                     'description' => 'Test our payment gateway in the sandbox environment using the sandbox Secret and the same email address',
