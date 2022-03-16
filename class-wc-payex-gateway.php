@@ -8,7 +8,7 @@
  * Plugin Name:       Payex Payment Gateway for Woocommerce
  * Plugin URI:        https://payex.io
  * Description:       Accept Online Banking, Cards, EWallets, Instalments, and Subscription payments using Payex
- * Version:           1.2.1
+ * Version:           1.2.2
  * Requires at least: 4.7
  * Requires PHP:      7.0
  * Author:            Payex Ventures Sdn Bhd
@@ -77,7 +77,6 @@ function payex_init_gateway_class()
             $this->has_fields = true; // in case you need a custom credit card form.
             $this->method_title = 'Payex Payment Gateway';
             $this->method_description = 'Accept Online Banking, Cards, EWallets, Instalments and Subscriptions using Payex Payment Gateway (https://www.payex.io/)'; // will be displayed on the options page.
-            $this->order_button_text = 'Pay via Payex';
 
             // Method with all the options fields.
             $this->init_form_fields();
@@ -86,6 +85,7 @@ function payex_init_gateway_class()
             $this->init_settings();
             $this->title = $this->get_option('title');
             $this->description = $this->get_option('description');
+            $this->order_button_text = $this->get_option('button');
             $this->enabled = $this->get_option('enabled');
             $this->testmode = 'yes' === $this->get_option('testmode');
 
@@ -136,6 +136,12 @@ function payex_init_gateway_class()
                     'type' => 'textarea',
                     'description' => 'This controls the description which the user sees during checkout',
                     'default' => 'Pay via Payex using Online Banking, Cards, EWallets and Instalments',
+                ) ,
+                'button' => array(
+                    'title' => 'Button',
+                    'type' => 'text',
+                    'description' => 'This controls the order button text which the user sees during checkout',
+                    'default' => 'Pay via Payex',
                 ) ,
                 'testmode' => array(
                     'title' => 'Sandbox environment',
@@ -709,27 +715,27 @@ function payex_init_gateway_class()
             // verify the payment is successful.
             if (PAYEX_AUTH_CODE_SUCCESS == $response_code)
             {
+                if ($txn_type == DIRECT_DEBIT_AUTHORIZATION)
+                {
+                    update_post_meta($order->get_id() , 'payex_txn_type', DIRECT_DEBIT);
+                }
+                else if ($txn_type == AUTO_DEBIT_AUTHORIZATION)
+                {
+                    update_post_meta($order->get_id() , 'payex_txn_type', AUTO_DEBIT);
+                }
+                else
+                {
+                    update_post_meta($order->get_id() , 'payex_txn_type', $txn_type);
+                }
+                
+                if ($mandate_number) update_post_meta($order->get_id(), 'payex_mandate_number', $mandate_number);
+                
                 if (!$order->is_paid())
                 {
                     // only mark order as completed if the order was not paid before.
                     $order->payment_complete($txn_id);
                     $order->reduce_order_stock();
                     $order->add_order_note( 'Payment completed via Payex (Txn ID: '.$txn_id.')', false );
-
-                    if ($txn_type == DIRECT_DEBIT_AUTHORIZATION)
-                    {
-                        update_post_meta($order->get_id() , 'payex_txn_type', DIRECT_DEBIT);
-                    }
-                    else if ($txn_type == AUTO_DEBIT_AUTHORIZATION)
-                    {
-                        update_post_meta($order->get_id() , 'payex_txn_type', AUTO_DEBIT);
-                    }
-                    else
-                    {
-                        update_post_meta($order->get_id() , 'payex_txn_type', $txn_type);
-                    }
-                    
-                    if ($mandate_number) update_post_meta($order->get_id(), 'payex_mandate_number', $mandate_number);
                 }
 
                 if ($txn_type == DIRECT_DEBIT_AUTHORIZATION)
