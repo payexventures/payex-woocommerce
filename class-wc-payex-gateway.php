@@ -8,7 +8,7 @@
  * Plugin Name:       Payex Payment Gateway for Woocommerce
  * Plugin URI:        https://payex.io
  * Description:       Accept Online Banking, Cards, EWallets, Instalments, and Subscription payments using Payex
- * Version:           1.2.2
+ * Version:           1.2.3
  * Requires at least: 4.7
  * Requires PHP:      7.0
  * Author:            Payex Ventures Sdn Bhd
@@ -715,7 +715,7 @@ function payex_init_gateway_class()
             // verify the payment is successful.
             if (PAYEX_AUTH_CODE_SUCCESS == $response_code)
             {
-                if ($txn_type == DIRECT_DEBIT_AUTHORIZATION)
+                if ($txn_type == DIRECT_DEBIT_AUTHORIZATION || $txn_type == DIRECT_DEBIT_APPROVAL)
                 {
                     update_post_meta($order->get_id() , 'payex_txn_type', DIRECT_DEBIT);
                 }
