@@ -8,7 +8,7 @@
  * Plugin Name:       Payex Payment Gateway for Woocommerce
  * Plugin URI:        https://payex.io
  * Description:       Accept Online Banking, Cards, EWallets, Instalments, and Subscription payments using Payex
- * Version:           1.2.4
+ * Version:           1.2.5
  * Requires at least: 4.7
  * Requires PHP:      7.0
  * Author:            Payex Ventures Sdn Bhd
@@ -64,6 +64,7 @@ function payex_init_gateway_class()
         const API_MANDATE_FORM = 'api/v1/Mandates';
         const API_COLLECTIONS = 'api/v1/Mandates/Collections';
         const API_CHARGES = 'api/v1/Transactions/Charges';
+        const API_QUERY = 'api/v1/Transactions';
         const HOOK_NAME = 'payex_hook';
 
         /**
@@ -223,6 +224,8 @@ function payex_init_gateway_class()
                 {
                     $payment_link = $this->get_payex_payment_link($url, $order, WC()->api_request_url(get_class($this)) , $token);
                 }
+                
+                wp_schedule_single_event( time() + (30 * MINUTE_IN_SECONDS), 'woocommerce_query_payex_payment_status', array( $order_id ) );
 
                 // Redirect to checkout page on Payex.
                 return array(
@@ -702,6 +705,64 @@ function payex_init_gateway_class()
             }
             return false;
         }
+        
+        /*
+         * Check Payment Status if status still pending
+         *
+         * @param  string      $order           Customer order.
+         * @return bool
+         */
+        public function query_payex_payment_status($order_id)
+        {
+            $order = wc_get_order($order_id);
+            
+            if (!$order->is_paid())
+            {
+                $url = self::API_URL;
+                
+                if ($this->get_option('testmode') === 'yes')
+                {
+                    $url = self::API_URL_SANDBOX;
+                }
+                
+                $token = $this->get_payex_token($url);
+                
+                if ($token)
+                {
+                    $request = wp_remote_get($url . self::API_QUERY . '?status=sales&reference_number=' . $order_id, array(
+                        'method' => 'GET',
+                        'timeout' => 45,
+                        'headers' => array(
+                            'Content-Type' => 'application/json',
+                            'Authorization' => 'Bearer ' . $token,
+                        ),
+                    ));
+                    
+                    if (is_wp_error($request) || 200 !== wp_remote_retrieve_response_code($request))
+                    {
+                        $order->update_status('failed', 'Invalid Request');
+                        error_log(print_r($request, true));
+                    }
+                    else
+                    {
+                        $response = wp_remote_retrieve_body($request);
+                        $response = json_decode($response, true);
+                    
+                        if ($response['status'] == '00' && count($response['result']) > 0)
+                        {
+                            $txn_id = $response['result'][0]['txn_id'];
+                            $mandate_number = $response['result'][0]['mandate_reference_number'];
+                            $txn_type = $response['result'][0]['txn_type'];
+                            $response_code = $response['result'][0]['auth_code'];
+                            $this->complete_payment($order, $txn_id, $mandate_number, $txn_type, $response_code);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+            return true;
+        }
 
         /**
          * Generate Payment form link to allow users to Pay
@@ -763,3 +824,21 @@ function payex_init_gateway_class()
         }
     }
 }
+
+/*
+ * Check Payment Status if status still pending
+ *
+ * @param  string      $order           Customer order.
+ */
+function query_payex_payment_status($order_id, $attempts = 0)
+{
+    if ($attempts < 10) 
+    {
+        $gateway = new WC_PAYEX_GATEWAY();
+        $updated = $gateway->query_payex_payment_status($order_id);
+        if (!$updated)
+            wp_schedule_single_event( time() + (30 * MINUTE_IN_SECONDS), 'woocommerce_query_payex_payment_status', array($order_id, ++$attempts) );
+    }
+}
+
+add_action('woocommerce_query_payex_payment_status', 'query_payex_payment_status', 10, 2);
