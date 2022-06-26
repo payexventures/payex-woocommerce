@@ -8,7 +8,7 @@
  * Plugin Name:       Payex Payment Gateway for Woocommerce
  * Plugin URI:        https://payex.io
  * Description:       Accept Online Banking, Cards, EWallets, Instalments, and Subscription payments using Payex
- * Version:           1.2.5
+ * Version:           1.2.6
  * Requires at least: 4.7
  * Requires PHP:      7.0
  * Author:            Payex Ventures Sdn Bhd
@@ -103,6 +103,7 @@ function payex_init_gateway_class()
 
             // This action hook saves the settings.
             add_action('woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ));
+            add_action('woocommerce_thankyou_' . $this->id, array(&$this, 'redirect'));
             add_action('woocommerce_api_wc_payex_gateway', array(&$this, 'webhook'));
             if (class_exists('WC_Subscriptions_Order'))
             {
@@ -225,7 +226,7 @@ function payex_init_gateway_class()
                     $payment_link = $this->get_payex_payment_link($url, $order, WC()->api_request_url(get_class($this)) , $token);
                 }
                 
-                wp_schedule_single_event( time() + (30 * MINUTE_IN_SECONDS), 'woocommerce_query_payex_payment_status', array( $order_id ) );
+                wp_schedule_single_event( time() + (10 * MINUTE_IN_SECONDS), 'woocommerce_query_payex_payment_status', array( $order_id ) );
 
                 // Redirect to checkout page on Payex.
                 return array(
@@ -273,6 +274,16 @@ function payex_init_gateway_class()
 
                 $this->complete_payment($order, $txn_id, $mandate_number, $txn_type, $response_code);
             }
+        }
+
+        /**
+         * Redirect page
+         */
+        public function redirect($order_id)
+        {
+            $updated = $this->query_payex_payment_status($order_id);
+            if (!$updated)
+                wp_schedule_single_event( time() + (3 * MINUTE_IN_SECONDS), 'woocommerce_query_payex_payment_status', array($order_id) );
         }
 
         /**
@@ -832,7 +843,7 @@ function payex_init_gateway_class()
  */
 function query_payex_payment_status($order_id, $attempts = 0)
 {
-    if ($attempts < 10) 
+    if ($attempts <= 10) 
     {
         $gateway = new WC_PAYEX_GATEWAY();
         $updated = $gateway->query_payex_payment_status($order_id);
