@@ -8,7 +8,7 @@
  * Plugin Name:       Payex Payment Gateway for Woocommerce
  * Plugin URI:        https://payex.io
  * Description:       Accept Online Banking, Cards, EWallets, Instalments, and Subscription payments using Payex
- * Version:           1.2.7
+ * Version:           1.2.8
  * Requires at least: 4.7
  * Requires PHP:      7.0
  * Author:            Payex Ventures Sdn Bhd
@@ -533,79 +533,82 @@ function payex_init_gateway_class()
                 $mandate_number = get_post_meta($parent_id, 'payex_mandate_number', true);
                 $txn_type = get_post_meta($parent_id, 'payex_txn_type', true);
 
-                $body = wp_json_encode(array(
-                    array(
-                        "reference_number" => $mandate_number,
-                        "collection_reference_number" => $order_id,
-                        "amount" => round($amount_to_charge * 100, 0) ,
-                        "collection_date" => date("Ymd")
-                    )
-                ));
-
-                $request = wp_remote_post($url . self::API_COLLECTIONS, array(
-                    'method' => 'POST',
-                    'timeout' => 45,
-                    'headers' => array(
-                        'Content-Type' => 'application/json',
-                        'Authorization' => 'Bearer ' . $token,
-                    ) ,
-                    'cookies' => array() ,
-                    'body' => $body
-                ));
-
-                if (is_wp_error($request) || 200 !== wp_remote_retrieve_response_code($request))
+                if (!$this->check_renewal_order_exist($mandate_number, $order_id))
                 {
-                    $renewal_order->update_status('failed', 'Invalid Request');
-                    error_log(print_r($request, true));
-                }
-                else
-                {
-                    $response = wp_remote_retrieve_body($request);
-                    $response = json_decode($response, true);
-                    if ($response['status'] == '99' || count($response['result']) == 0 || (count($response['result']) != 0 && $response['result'][0]['status'] == '99'))
+                    $body = wp_json_encode(array(
+                        array(
+                            "reference_number" => $mandate_number,
+                            "collection_reference_number" => $order_id,
+                            "amount" => round($amount_to_charge * 100, 0) ,
+                            "collection_date" => date("Ymd")
+                        )
+                    ));
+    
+                    $request = wp_remote_post($url . self::API_COLLECTIONS, array(
+                        'method' => 'POST',
+                        'timeout' => 45,
+                        'headers' => array(
+                            'Content-Type' => 'application/json',
+                            'Authorization' => 'Bearer ' . $token,
+                        ) ,
+                        'cookies' => array() ,
+                        'body' => $body
+                    ));
+    
+                    if (is_wp_error($request) || 200 !== wp_remote_retrieve_response_code($request))
                     {
-                        $error = $response['message'];
-                        if (count($response['result']) != 0) $error = $response['result'][0]['error'];
-                        $renewal_order->update_status('failed', $error);
-                        error_log(print_r($error, true));
-                    }
-
-                    $collection_number = $response['result'][0]['collection_number'];
-
-                    update_post_meta($order_id, 'payex_collection_number', $collection_number);
-
-                    // if auto debit, charge immediately
-                    if ($txn_type != DIRECT_DEBIT)
-                    {
-                        $renewal_order->add_order_note( 'Auto Debit charge initiated', false );
-
-                        $request = wp_remote_post($url . self::API_CHARGES, array(
-                            'method' => 'POST',
-                            'timeout' => 45,
-                            'headers' => array(
-                                'Content-Type' => 'application/json',
-                                'Authorization' => 'Bearer ' . $token,
-                            ) ,
-                            'cookies' => array() ,
-                            'body' => wp_json_encode(array(
-                                'collection_number' => $collection_number
-                            ))
-                        ));
-
-                        $response = wp_remote_retrieve_body($request);
-                        $response = json_decode($response, true);
-
-                        $this->complete_payment(
-                            $renewal_order, 
-                            $response['txn_id'], 
-                            $response['mandate_reference_number'], 
-                            $response['txn_type'], 
-                            $response['auth_code']
-                        );
+                        $renewal_order->update_status('failed', 'Invalid Request');
+                        error_log(print_r($request, true));
                     }
                     else
                     {
-                        $renewal_order->add_order_note( 'Direct Debit charge initiated, pending bank approval. Please do not make any changes to avoid duplicate charges', false );
+                        $response = wp_remote_retrieve_body($request);
+                        $response = json_decode($response, true);
+                        if ($response['status'] == '99' || count($response['result']) == 0 || (count($response['result']) != 0 && $response['result'][0]['status'] == '99'))
+                        {
+                            $error = $response['message'];
+                            if (count($response['result']) != 0) $error = $response['result'][0]['error'];
+                            $renewal_order->update_status('failed', $error);
+                            error_log(print_r($error, true));
+                        }
+    
+                        $collection_number = $response['result'][0]['collection_number'];
+    
+                        update_post_meta($order_id, 'payex_collection_number', $collection_number);
+    
+                        // if auto debit, charge immediately
+                        if ($txn_type != DIRECT_DEBIT)
+                        {
+                            $renewal_order->add_order_note( 'Auto Debit charge initiated', false );
+    
+                            $request = wp_remote_post($url . self::API_CHARGES, array(
+                                'method' => 'POST',
+                                'timeout' => 45,
+                                'headers' => array(
+                                    'Content-Type' => 'application/json',
+                                    'Authorization' => 'Bearer ' . $token,
+                                ) ,
+                                'cookies' => array() ,
+                                'body' => wp_json_encode(array(
+                                    'collection_number' => $collection_number
+                                ))
+                            ));
+    
+                            $response = wp_remote_retrieve_body($request);
+                            $response = json_decode($response, true);
+    
+                            $this->complete_payment(
+                                $renewal_order, 
+                                $response['txn_id'], 
+                                $response['mandate_reference_number'], 
+                                $response['txn_type'], 
+                                $response['auth_code']
+                            );
+                        }
+                        else
+                        {
+                            $renewal_order->add_order_note( 'Direct Debit charge initiated, pending bank approval. Please do not make any changes to avoid duplicate charges', false );
+                        }
                     }
                 }
             }
@@ -773,6 +776,59 @@ function payex_init_gateway_class()
                 return false;
             }
             return true;
+        }
+
+        /*
+         * Check if renewal order already created
+         *
+         * @param  string      $parent          Parent order.
+         * @param  string      $order           Customer order.
+         * @return bool
+         */
+        public function check_renewal_order_exist($mandate_number, $order_id)
+        {
+            $url = self::API_URL;
+                
+            if ($this->get_option('testmode') === 'yes')
+            {
+                $url = self::API_URL_SANDBOX;
+            }
+                
+            $token = $this->get_payex_token($url);
+                
+            if ($token)
+            {
+                $request = wp_remote_get($url . self::API_COLLECTIONS . '?reference_number=' . $mandate_number . '&collection_reference_number=' . $order_id, array(
+                    'method' => 'GET',
+                    'timeout' => 45,
+                    'headers' => array(
+                        'Content-Type' => 'application/json',
+                        'Authorization' => 'Bearer ' . $token,
+                    ),
+                ));
+                    
+                if (is_wp_error($request) || 200 !== wp_remote_retrieve_response_code($request))
+                {
+                    error_log(print_r($request, true));
+                }
+                else
+                {
+                    $response = wp_remote_retrieve_body($request);
+                    $response = json_decode($response, true);
+                    
+                    if ($response['status'] == '00' && count($response['result']) > 0)
+                    {
+                        foreach ($response['result'] as $obj) 
+                        {
+                            if (in_array($obj["batch_status_code"], array("01", "02", "04")) || $obj["collection_status_code"] == PAYEX_AUTH_CODE_SUCCESS)
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
         }
 
         /**
